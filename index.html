@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Микро-Айзек — кружок Нейросети</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+  html,body { height:100%; overflow:hidden; background:#1a1030; font-family:'Comic Sans MS','Segoe UI',sans-serif; }
+  #game { position:relative; width:100vw; height:100vh; touch-action:none; }
+
+  #hud { position:fixed; top:10px; left:10px; z-index:10; display:flex; gap:14px; align-items:center;
+    background:rgba(0,0,0,.45); padding:8px 16px; border-radius:16px; color:#fff; font-size:28px; font-weight:bold; }
+  #hud .hearts { font-size:32px; letter-spacing:2px; }
+  #btnReset { position:fixed; top:10px; right:10px; z-index:10; background:#e74c3c; color:#fff; border:none;
+    font-size:22px; font-weight:bold; padding:14px 22px; border-radius:16px; cursor:pointer; font-family:inherit; }
+
+  .screen { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:26px; background:rgba(20,10,45,.92); color:#fff; text-align:center; padding:30px; }
+  .screen h1 { font-size:min(9vw,72px); text-shadow:0 4px 0 #6c3ce0; }
+  .screen p { font-size:min(4.5vw,30px); max-width:800px; line-height:1.4; }
+  .bigbtn { font-family:inherit; font-size:min(6vw,40px); font-weight:bold; padding:24px 60px; border:none; border-radius:22px;
+    cursor:pointer; background:linear-gradient(#9b59f5,#7d3ce0); color:#fff; box-shadow:0 6px 0 #4a2190; }
+  .bigbtn:active { transform:translateY(4px); box-shadow:0 2px 0 #4a2190; }
+  .hidden { display:none !important; }
+
+  .room { position:absolute; inset:7% 6%; background:#2d1b4e; border:14px solid #4a2f7a; border-radius:18px; }
+  .obstacle { position:absolute; background:#5a3d8f; border:4px solid #7d5fc0; border-radius:12px; }
+  .pickup { position:absolute; font-size:40px; line-height:1; filter:drop-shadow(0 0 8px gold); animation:bob 1s infinite alternate; }
+  @keyframes bob { 50% { transform:translateY(-8px); } }
+  .door { position:absolute; width:150px; height:56px; background:#3ce07a; border:4px solid #1f9e4d; border-radius:12px; cursor:pointer; z-index:6; }
+  .door.locked { background:#888; border-color:#666; }
+  .door span { display:block; text-align:center; color:#083b1d; font-weight:bold; font-size:22px; margin-top:8px; }
+  .door.shake { animation:shake .3s; }
+  @keyframes shake { 25% { transform:translateX(-6px); } 75% { transform:translateX(6px); } }
+
+  .player { position:absolute; width:56px; height:56px; background:radial-gradient(circle at 35% 35%, #ffd9a0, #e8a24b);
+    border:4px solid #8a5a1e; border-radius:50%; z-index:5; transition:transform .05s linear; }
+  .player.hurt { background:radial-gradient(circle at 35% 35%, #ff8a8a, #e04b4b); }
+  .enemy { position:absolute; width:54px; height:54px; background:radial-gradient(circle at 35% 35%, #ff9bb0, #c9365f);
+    border:4px solid #7a1236; border-radius:50%; z-index:4; }
+  .tear { position:absolute; width:22px; height:22px; background:#8ad4ff; border:3px solid #2f7fb8; border-radius:50%; z-index:3; }
+  .e-tear { position:absolute; width:26px; height:26px; background:#ffb08a; border:3px solid #b8542f; border-radius:50%; z-index:3; }
+
+  #stick { position:fixed; left:34px; bottom:34px; width:220px; height:220px; z-index:15;
+    background:rgba(255,255,255,.12); border:5px solid rgba(255,255,255,.35); border-radius:50%; touch-action:none; }
+  #stickKnob { position:absolute; left:50%; top:50%; width:90px; height:90px; margin:-45px 0 0 -45px;
+    background:rgba(255,255,255,.55); border-radius:50%; pointer-events:none; }
+  .fire { position:fixed; width:110px; height:110px; z-index:15; border-radius:50%;
+    background:rgba(138,212,255,.25); border:5px solid rgba(138,212,255,.6); color:#bfe9ff; font-size:52px;
+    display:flex; align-items:center; justify-content:center; }
+  #fireU { right:98px; bottom:230px; } #fireD { right:98px; bottom:20px; }
+  #fireL { right:216px; bottom:125px; } #fireR { right:-20px; bottom:125px; }
+  #stick, .fire { cursor:pointer; }
+  @media (min-width:1200px) and (pointer:fine) { #stick,.fire { display:none; } }
+  #kbdHint { position:fixed; bottom:8px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,.5); font-size:18px; z-index:9; }
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="hud">
+    <span class="hearts" id="hearts">❤️❤️❤️</span>
+    <span id="roomLabel">Комната 1</span>
+    <span id="treasureLabel">💎 0</span>
+  </div>
+  <button id="btnReset">Заново</button>
+
+  <div id="startScreen" class="screen">
+    <h1>🚪 Микро-Айзек</h1>
+    <p>Беги пальцем по джойстику, стреляй слезами по кнопкам-стрелкам.<br>Собирай 💎 и ищи зелёную дверь — она откроется, когда в комнате не останется врагов!</p>
+    <button class="bigbtn" id="btnStart">Играть!</button>
+  </div>
+
+  <div id="winScreen" class="screen hidden">
+    <h1>🏆 Победа!</h1>
+    <p id="winText"></p>
+    <button class="bigbtn" id="btnAgain">Ещё раз!</button>
+  </div>
+
+  <div id="loseScreen" class="screen hidden">
+    <h1>💀 Ой...</h1>
+    <p>Нейросеть говорит: попробуй бегать и стрелять одновременно!</p>
+    <button class="bigbtn" id="btnRetry">Попробовать снова</button>
+  </div>
+
+  <div id="stick"><div id="stickKnob"></div></div>
+  <div class="fire" id="fireU">⬆️</div>
+  <div id="fireD" class="fire">⬇️</div>
+  <div id="fireL" class="fire">⬅️</div>
+  <div id="fireR" class="fire">➡️</div>
+  <div id="kbdHint">WASD — бег, стрелки — выстрелы · на доске: держи палец/курсор в комнате — игрок бежит к нему и стреляет в его сторону</div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const W = () => innerWidth, H = () => innerHeight;
+const room = { x:0, y:0, w:0, h:0 };
+function roomRect(){ room.x = W()*0.06+14; room.y = H()*0.07+14; room.w = W()*0.88-28; room.h = H()*0.86-28; }
+
+const state = { hearts:3, gems:0, roomsCleared:0, running:false, inv:0 };
+const MAX_HEARTS = 3, TOTAL_ROOMS = 5;
+let player, enemies, tears, eTears, obstacles, pickup, door, roomId;
+
+function clampPos(o){
+  o.x = Math.max(room.x+o.r, Math.min(room.x+room.w-o.r, o.x));
+  o.y = Math.max(room.y+o.r, Math.min(room.y+room.h-o.r, o.y));
+  return o;
+}
+function hitsObstacle(o){
+  for(const ob of obstacles)
+    if(Math.abs(o.x-ob.x) < ob.w/2+o.r && Math.abs(o.y-ob.y) < ob.h/2+o.r) return true;
+  return false;
+}
+function mkEl(cls, parent){ const e=document.createElement('div'); e.className=cls; (parent||$('game')).appendChild(e); return e; }
+
+const generatedRoomSignatures = new Set();
+
+function rnd(a,b){ return a + Math.random()*(b-a); }
+function rndInt(a,b){ return Math.floor(rnd(a,b+1)); }
+function roomPoint(fx,fy,r=0){
+  return { x:room.x+room.w*fx, y:room.y+room.h*fy, r };
+}
+function circlesOverlap(a,b,gap=0){
+  return Math.hypot(a.x-b.x,a.y-b.y) < a.r+b.r+gap;
+}
+function obstacleOverlap(a,b,gap=0){
+  return Math.abs(a.x-b.x) < (a.w+b.w)/2+gap &&
+    Math.abs(a.y-b.y) < (a.h+b.h)/2+gap;
+}
+function pointBlocked(p, extra=8){
+  return obstacles.some(ob =>
+    Math.abs(p.x-ob.x) < ob.w/2+p.r+extra &&
+    Math.abs(p.y-ob.y) < ob.h/2+p.r+extra);
+}
+function inReservedZone(p){
+  const fx=(p.x-room.x)/room.w, fy=(p.y-room.y)/room.h;
+  return fy < 0.13 || fy > 0.86 ||
+    (Math.abs(fx-0.5)<0.13 && fy<0.22);
+}
+function freePoint(r, taken=[]){
+  for(let n=0;n<180;n++){
+    const p=roomPoint(rnd(0.10,0.90),rnd(0.18,0.80),r);
+    if(inReservedZone(p) || pointBlocked(p,10)) continue;
+    if(taken.some(q=>circlesOverlap(p,q,18))) continue;
+    return p;
+  }
+  return roomPoint(0.5,0.5,r);
+}
+function roomSignature(){
+  const obs=obstacles.map(o=>[
+    Math.round((o.x-room.x)/room.w*100),
+    Math.round((o.y-room.y)/room.h*100),
+    Math.round(o.w/room.w*100),Math.round(o.h/room.h*100)
+  ]).join(';');
+  const ens=enemies.map(e=>[
+    Math.round((e.x-room.x)/room.w*100),
+    Math.round((e.y-room.y)/room.h*100),e.type
+  ]).join(';');
+  return obs+'|'+ens;
+}
+
+/* ---------- комнаты ---------- */
+function buildRoom(id){
+  roomId=id;
+  document.querySelectorAll('.room,.obstacle,.enemy,.pickup,.door')
+    .forEach(e=>e.remove());
+  enemies=[]; tears=[]; eTears=[]; obstacles=[]; pickup=null; door=null;
+  mkEl('room');
+  $('roomLabel').textContent='Комната '+(id+1)+' из '+TOTAL_ROOMS;
+
+  // Сложность: 1, 2, 3, 4 и 5 врагов соответственно.
+  const obstacleCount=2+id*2;
+  const enemyCount=1+id;
+  const taken=[];
+
+  // Несколько попыток дают новую сигнатуру даже при редком совпадении RNG.
+  for(let attempt=0;attempt<30;attempt++){
+    obstacles=[];
+    document.querySelectorAll('.obstacle').forEach(e=>e.remove());
+    for(let i=0;i<obstacleCount;i++){
+      let placed=false;
+      for(let n=0;n<100 && !placed;n++){
+        const candidate={
+          x:room.x+room.w*rnd(0.16,0.84),
+          y:room.y+room.h*rnd(0.24,0.72),
+          w:room.w*rnd(0.08,0.15)*(1+id*.05),
+          h:room.h*rnd(0.07,0.12)*(1+id*.04), r:0
+        };
+        if(!inReservedZone({...candidate,r:28}) &&
+           !obstacles.some(o=>obstacleOverlap(candidate,o,18))){
+          addObstacle((candidate.x-room.x)/room.w,
+            (candidate.y-room.y)/room.h,
+            candidate.w/room.w,candidate.h/room.h);
+          placed=true;
+        }
+      }
+    }
+
+    enemies=[];
+    document.querySelectorAll('.enemy').forEach(e=>e.remove());
+    document.querySelectorAll('.pickup').forEach(e=>e.remove());
+    pickup=null;
+    taken.length=0;
+    for(let i=0;i<enemyCount;i++){
+      let type='chaser';
+      if(id>=1 && i%3===1) type='shooter';
+      if(id===TOTAL_ROOMS-1 && i===0) type='boss';
+      const radius=type==='boss'?42:27;
+      const p=freePoint(radius,taken);
+      spawnEnemy((p.x-room.x)/room.w,(p.y-room.y)/room.h,type);
+      taken.push({...p});
+    }
+
+    const gem=freePoint(20,taken);
+    placeGem((gem.x-room.x)/room.w,(gem.y-room.y)/room.h);
+    const sig=roomSignature();
+    if(!generatedRoomSignatures.has(sig) || attempt===29){
+      generatedRoomSignatures.add(sig);
+      break;
+    }
+  }
+
+  const d=mkEl('door'); d.id='door'; d.classList.add('locked');
+  d.innerHTML='<span>закрыто</span>';
+  d.addEventListener('pointerdown',tryDoor);
+  door=d; positionDoor();
+}
+function addObstacle(fx,fy,fw,fh){
+  const ob = { x:room.x+room.w*fx, y:room.y+room.h*fy, w:room.w*fw, h:room.h*fh, r:0 };
+  obstacles.push(ob);
+  const e = mkEl('obstacle');
+  e.style.width=ob.w+'px'; e.style.height=ob.h+'px'; position(e,ob.x,ob.y);
+}
+function position(e,x,y){ e.style.left=(x-e.offsetWidth/2)+'px'; e.style.top=(y-e.offsetHeight/2)+'px'; }
+function positionDoor(){
+  if(!door) return;
+  door.style.left = (room.x+room.w/2-75)+'px';
+  door.style.top = (room.y-10)+'px';
+}
+function doorCenter(){ return { x:room.x+room.w/2, y:room.y+20 }; }
+function spawnEnemy(fx,fy,type){
+  const e = { x:room.x+room.w*fx, y:room.y+room.h*fy,
+    r:type==='boss'?42:27, type, hp:type==='boss'?8:2,
+    t:0, el:mkEl('enemy'), speed:type==='boss'?1.5:1.8 };
+  if(type==='boss'){
+    e.el.style.width='84px'; e.el.style.height='84px';
+    e.el.style.fontSize='40px';
+  }
+  e.el.textContent = type==='boss' ? '😈' : '👾';
+  enemies.push(e);
+}
+function placeGem(fx,fy){
+  const g = { x:room.x+room.w*fx, y:room.y+room.h*fy, r:20, el:mkEl('pickup') };
+  g.el.textContent='💎'; position(g.el,g.x,g.y); pickup=g;
+}
+
+/* ---------- ввод ---------- */
+const keys = {}, move = { x:0, y:0 };
+addEventListener('keydown', e=>{ keys[e.key.toLowerCase()]=true; if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault(); });
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+const stick = $('stick'), knob = $('stickKnob');
+let stickId=null, sc={x:0,y:0};
+stick.addEventListener('pointerdown', e=>{ stickId=e.pointerId; sc={x:e.clientX,y:e.clientY}; stick.setPointerCapture(e.pointerId); });
+stick.addEventListener('pointermove', e=>{
+  if(e.pointerId!==stickId) return;
+  let dx=e.clientX-sc.x, dy=e.clientY-sc.y;
+  const len=Math.hypot(dx,dy), max=90;
+  if(len>max){ dx=dx/len*max; dy=dy/len*max; }
+  knob.style.transform=`translate(${dx}px,${dy}px)`;
+  move.x=dx/max; move.y=dy/max;
+});
+const stickEnd = e=>{ if(e.pointerId===stickId){ stickId=null; move.x=move.y=0; knob.style.left='50%'; knob.style.top='50%'; } };
+stick.addEventListener('pointerup', stickEnd); stick.addEventListener('pointercancel', stickEnd);
+
+const dirs = { fireU:[0,-1], fireD:[0,1], fireL:[-1,0], fireR:[1,0] };
+for(const [id,d] of Object.entries(dirs)){
+  const el=$(id);
+  el.addEventListener('pointerdown', e=>{ e.stopPropagation(); fire(d[0],d[1]); });
+}
+
+/* ---------- управление курсором (мышь / доска) ---------- */
+const mouse = { active:false, tx:0, ty:0 };
+$('game').addEventListener('pointerdown', e=>{
+  if(e.target.closest('#stick,.fire,#btnReset,.screen,#door')) return;
+  mouse.active=true; mouse.tx=e.clientX; mouse.ty=e.clientY;
+});
+$('game').addEventListener('pointermove', e=>{ if(mouse.active){ mouse.tx=e.clientX; mouse.ty=e.clientY; } });
+const mouseEnd = ()=>{ mouse.active=false; };
+$('game').addEventListener('pointerup', mouseEnd);
+$('game').addEventListener('pointercancel', mouseEnd);
+
+/* ---------- стрельба ---------- */
+function fire(dx,dy){
+  if(!state.running) return;
+  const t={ x:player.x+dx*40, y:player.y+dy*40, r:11, dx:dx*9, dy:dy*9, el:mkEl('tear') };
+  tears.push(t);
+}
+function eFire(e,dx,dy){
+  const t={ x:e.x+dx*40, y:e.y+dy*40, r:13, dx:dx*4.2, dy:dy*4.2, el:mkEl('e-tear') };
+  eTears.push(t);
+}
+
+/* ---------- двери/переходы ---------- */
+function roomCleared(){ return enemies.length===0; }
+function tryDoor(){
+  if(!state.running) return;
+  if(!roomCleared()){
+    door.classList.remove('shake'); void door.offsetWidth; door.classList.add('shake');
+    door.firstChild.textContent = 'убей всех!';
+    setTimeout(()=>{ if(door && !roomCleared()) door.firstChild.textContent='закрыто'; }, 900);
+    return;
+  }
+  if(roomId+1 >= TOTAL_ROOMS){ win(); return; }
+  buildRoom(roomId+1);
+  player.x = room.x+room.w/2; player.y = room.y+room.h-70;
+  position(player.el, player.x, player.y);
+}
+function win(){
+  state.running=false;
+  $('winText').textContent = 'Комнат пройдено: '+TOTAL_ROOMS+'. Алмазов собрано: '+state.gems+'. За это — наклейка на доске!';
+  $('winScreen').classList.remove('hidden');
+}
+
+function moveEnemy(e,dx,dy,step){
+  const nx=clampPos({x:e.x+dx*step,y:e.y,r:e.r});
+  if(!hitsObstacle(nx)) e.x=nx.x;
+  const ny=clampPos({x:e.x,y:e.y+dy*step,r:e.r});
+  if(!hitsObstacle(ny)) e.y=ny.y;
+}
+
+/* ---------- цикл ---------- */
+let last=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(!state.running) return;
+  const dt = Math.min((ts-last)/16.7, 3); last=ts;
+
+  // движение игрока
+  let mx=move.x, my=move.y;
+  if(keys['arrowleft']||keys['a']) mx=-1; if(keys['arrowright']||keys['d']) mx=1;
+  if(keys['arrowup']||keys['w']) my=-1; if(keys['arrowdown']||keys['s']) my=1;
+
+  // курсор: движение к точке нажатия + стрельба в её сторону
+  let aim=null;
+  if(mouse.active){
+    const dxm=mouse.tx-player.x, dym=mouse.ty-player.y, lm=Math.hypot(dxm,dym)||1;
+    if(lm>12){ mx=dxm/lm; my=dym/lm; }
+    aim=[dxm/lm, dym/lm];
+  }
+  const spd=5.2;
+  let nx=player.x+mx*spd*dt, ny=player.y+my*spd*dt;
+  const test={x:nx,y:player.y,r:28}; if(!hitsObstacle(test)) player.x=clampPos(test).x;
+  const test2={x:player.x,y:ny,r:28}; if(!hitsObstacle(test2)) player.y=clampPos(test2).y;
+  position(player.el,player.x,player.y);
+
+  // стрельба: стрелки, кнопки и курсор, кулдаун
+  if(ts - (fire.last||0) > 600){
+    let shot=null;
+    if(keys['arrowup']) shot=[0,-1]; else if(keys['arrowdown']) shot=[0,1];
+    else if(keys['arrowleft']) shot=[-1,0]; else if(keys['arrowright']) shot=[1,0];
+    else if(aim) shot=aim;
+    if(shot){ fire(shot[0],shot[1]); fire.last=ts; }
+  }
+
+  // слёзы игрока
+  for(let i=tears.length-1;i>=0;i--){
+    const t=tears[i]; t.x+=t.dx*dt; t.y+=t.dy*dt; position(t.el,t.x,t.y);
+    let dead = t.x<room.x||t.x>room.x+room.w||t.y<room.y||t.y>room.y+room.h||hitsObstacle(t);
+    if(!dead) for(const e of enemies){
+      if(Math.hypot(t.x-e.x,t.y-e.y)<e.r+t.r){ dead=true; e.hp--; e.el.style.filter='brightness(2)'; setTimeout(()=>e.el.style.filter='',120); break; }
+    }
+    if(dead){ t.el.remove(); tears.splice(i,1); }
+  }
+  enemies = enemies.filter(e=>{ if(e.hp<=0){ e.el.remove(); return false; } return true; });
+
+  // враги
+  for(const e of enemies){
+    e.t+=dt;
+    const dx=player.x-e.x, dy=player.y-e.y, len=Math.hypot(dx,dy)||1;
+    if(e.type==='chaser'||e.type==='boss'){
+      const step=e.type==='boss' ? (e.t%120<60?1.4:0.4) : e.speed;
+      moveEnemy(e,dx/len,dy/len,step*dt);
+    } else { // shooter стоит и стреляет
+      if(e.t%90<1 && eTears.length<6) eFire(e, dx/len, dy/len);
+    }
+    position(e.el,e.x,e.y);
+    if(len<e.r+28 && state.inv<=0) hurt();
+  }
+
+  // вражеские слёзы
+  for(let i=eTears.length-1;i>=0;i--){
+    const t=eTears[i]; t.x+=t.dx*dt; t.y+=t.dy*dt; position(t.el,t.x,t.y);
+    let dead = t.x<room.x||t.x>room.x+room.w||t.y<room.y||t.y>room.y+room.h||hitsObstacle(t);
+    if(!dead && Math.hypot(t.x-player.x,t.y-player.y)<28+t.r && state.inv<=0){ dead=true; hurt(); }
+    if(dead){ t.el.remove(); eTears.splice(i,1); }
+  }
+
+  // алмаз
+  if(pickup && Math.hypot(player.x-pickup.x,player.y-pickup.y)<45){
+    pickup.el.remove(); pickup=null; state.gems++; $('treasureLabel').textContent='💎 '+state.gems;
+  }
+
+  // дверь: авто-переход, если игрок подошёл к открытой двери
+  if(door){
+    const open=roomCleared();
+    door.classList.toggle('locked',!open);
+    door.firstChild.textContent = open ? (roomId+1>=TOTAL_ROOMS?'🏁 финиш!':'открыто!') : 'закрыто';
+    if(open){
+      const c=doorCenter();
+      if(Math.hypot(player.x-c.x, player.y-c.y)<60) tryDoor();
+    }
+  }
+  if(state.inv>0){ state.inv-=dt; player.el.classList.toggle('hurt', (state.inv|0)%2===0); }
+  else player.el.classList.remove('hurt');
+}
+function hurt(){
+  state.inv=60; state.hearts--; drawHearts();
+  if(state.hearts<=0){ state.running=false; $('loseScreen').classList.remove('hidden'); }
+}
+function drawHearts(){ $('hearts').textContent = '❤️'.repeat(Math.max(state.hearts,0)) + '🖤'.repeat(MAX_HEARTS-Math.max(state.hearts,0)); }
+
+/* ---------- старт/сброс ---------- */
+function start(){
+  generatedRoomSignatures.clear();
+  document.querySelectorAll('.room,.obstacle,.enemy,.pickup,.door,.tear,.e-tear').forEach(e=>e.remove());
+  tears=[]; eTears=[]; obstacles=[];
+  state.hearts=MAX_HEARTS; state.gems=0; state.roomsCleared=0; state.inv=0;
+  $('treasureLabel').textContent='💎 0'; drawHearts();
+  roomRect();
+  player = { x:0, y:0, r:28, el:document.querySelector('.player') };
+  if(!player.el){ player.el=mkEl('player'); } else { player.el.style.display=''; }
+  buildRoom(0);
+  player.x=room.x+room.w/2; player.y=room.y+room.h-70; position(player.el,player.x,player.y);
+  $('startScreen').classList.add('hidden'); $('winScreen').classList.add('hidden'); $('loseScreen').classList.add('hidden');
+  state.running=true;
+}
+$('btnStart').addEventListener('click', start);
+$('btnAgain').addEventListener('click', start);
+$('btnRetry').addEventListener('click', start);
+$('btnReset').addEventListener('click', ()=>{ state.running=false; start(); });
+
+addEventListener('resize', ()=>{ roomRect(); positionDoor(); });
+roomRect();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
